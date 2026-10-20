@@ -55,10 +55,14 @@ def evaluate_xd(model, test_loader, maxlen, gt, gtsegments, gtlabels, device, te
 
             all_scores.append(video_scores)
 
-            pred_abn = video_scores[:, np.newaxis]
-            pred_nor = 1.0 - pred_abn
-            dist_2class = np.concatenate([pred_nor, pred_abn], axis=1)
-            dist_expanded = np.repeat(dist_2class, 16, axis=0)
+            if out.get('class_probs') is not None:
+                probs = out['class_probs'].squeeze(0)[:len_cur].cpu().numpy()  # (T, 7)
+                dist_expanded = np.repeat(probs, 16, axis=0)
+            else:
+                pred_abn = video_scores[:, np.newaxis]
+                pred_nor = 1.0 - pred_abn
+                dist_2class = np.concatenate([pred_nor, pred_abn], axis=1)
+                dist_expanded = np.repeat(dist_2class, 16, axis=0)
             element_logits_stack.append(dist_expanded)
 
             if (i + 1) % 50 == 0 or (i + 1) == len(test_loader):
