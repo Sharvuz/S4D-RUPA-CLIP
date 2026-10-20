@@ -152,7 +152,7 @@ def main():
     )
 
     test_dataset = UCFDataset(args.visual_length, args.test_list, test_mode=True)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=args.num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)

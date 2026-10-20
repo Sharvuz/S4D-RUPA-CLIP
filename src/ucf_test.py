@@ -62,6 +62,9 @@ def evaluate_ucf(model, test_loader, maxlen, gt, gtsegments, gtlabels, device, t
             dist_expanded = np.repeat(dist_2class, 16, axis=0)
             element_logits_stack.append(dist_expanded)
 
+            if (i + 1) % 50 == 0 or (i + 1) == len(test_loader):
+                print(f"  [Validation] Processing test video [{i+1:03d}/{len(test_loader):03d}]...", flush=True)
+
     all_scores_flat = np.concatenate(all_scores, axis=0)
     frame_scores = np.repeat(all_scores_flat, 16)
 
@@ -103,7 +106,7 @@ if __name__ == '__main__':
             print(f"[Warning] Could not load text features: {e}. Running in visual-only mode.")
 
     test_dataset = UCFDataset(args.visual_length, args.test_list, test_mode=True)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=args.num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
 
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
