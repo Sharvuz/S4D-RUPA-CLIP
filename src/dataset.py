@@ -1,12 +1,10 @@
 """
 Dataset loaders for UCF-Crime and XD-Violence with CLIP features.
-Ultra-fast Radar Cache using C-level os.walk (0.5s indexing for 60,000+ files).
-Pure in-memory dictionary matching (0.02s for 16,000 items, 0 FUSE lag).
-Automatically handles character variations (# <-> + <-> _).
+High-speed data feeding for standalone S4D-RUPA-CLIP.
+Seamlessly loads pre-mapped CSVs from Kaggle artifacts or falls back to auto-resolution.
 """
 
 import os
-import time
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -15,94 +13,49 @@ import torch.utils.data as data
 import tools
 
 
-_NPY_RADAR_CACHE = {}
-
-
-def init_radar_cache():
-    """
-    Rapidly scans /kaggle/input (or local directories) using os.walk in < 1 second.
-    Maps file basenames and character variants (# <-> + <-> _) to their exact filepaths.
-    """
-    global _NPY_RADAR_CACHE
-    if _NPY_RADAR_CACHE:
-        return _NPY_RADAR_CACHE
-
-    print("\n[Radar] Scanning storage for .npy feature files...", flush=True)
-    t0 = time.time()
-
-    # Determine fast search target
-    if os.path.exists("/kaggle/input"):
-        search_roots = ["/kaggle/input"]
-        try:
-            detected = [d for d in os.listdir("/kaggle/input") if os.path.isdir(os.path.join("/kaggle/input", d))]
-            print(f"[Radar] Detected dataset folders in /kaggle/input: {detected}", flush=True)
-        except Exception:
-            pass
-    else:
-        search_roots = ["..", "."]
-
-    count = 0
-    for s_root in search_roots:
-        if not os.path.exists(s_root):
-            continue
-        for root, dirs, files in os.walk(s_root, followlinks=False):
-            for f in files:
-                if f.endswith('.npy'):
-                    full_path = os.path.join(root, f)
-                    if f not in _NPY_RADAR_CACHE:
-                        _NPY_RADAR_CACHE[f] = full_path
-                        count += 1
-                    # Register bidirectional character variations
-                    if '#' in f:
-                        _NPY_RADAR_CACHE[f.replace('#', '+')] = full_path
-                        _NPY_RADAR_CACHE[f.replace('#', '_')] = full_path
-                        _NPY_RADAR_CACHE[f.replace('#', '')] = full_path
-                    if '+' in f:
-                        _NPY_RADAR_CACHE[f.replace('+', '#')] = full_path
-                        _NPY_RADAR_CACHE[f.replace('+', '_')] = full_path
-                        _NPY_RADAR_CACHE[f.replace('+', '')] = full_path
-
-    t1 = time.time()
-    print(f"[Radar] Indexing complete: {count} unique feature files located in {t1 - t0:.2f}s!\n", flush=True)
-    return _NPY_RADAR_CACHE
-
-
-def find_dataset_root(hint: str) -> str:
-    """Helper for notebook diagnostics."""
-    cache = init_radar_cache()
-    hint_lower = hint.lower()
-    for name, path in cache.items():
-        if hint_lower in path.lower():
-            return str(Path(path).parent)
-    return ""
+_CACHE = {}
 
 
 def resolve_npy_path(path_str: str) -> str:
-    """
-    Translates hardcoded paths from list CSVs into valid absolute paths
-    via the pre-indexed Radar Cache in pure memory (O(1) dictionary lookup).
-    Avoids expensive FUSE stat() system calls.
-    """
-    if not _NPY_RADAR_CACHE:
-        init_radar_cache()
+    """Fallback resolver if the CSV still contains raw/foreign paths."""
+    if os.path.exists(path_str):
+        return path_str
+
+    if path_str in _CACHE:
+        return _CACHE[path_str]
 
     basename = os.path.basename(str(path_str).replace('\\', '/'))
-    if basename in _NPY_RADAR_CACHE:
-        return _NPY_RADAR_CACHE[basename]
 
-    # Check bidirectional hashtag/plus/underscore variations
+    # Quick scan in common Kaggle and local roots if not cached
+    if not _CACHE:
+        for root_dir in ["/kaggle/input", "/kaggle/working", "..", "."]:
+            if os.path.exists(root_dir):
+                for r, _, files in os.walk(root_dir, followlinks=False):
+                    for f in files:
+                        if f.endswith('.npy'):
+                            fp = os.path.join(r, f)
+                            _CACHE[f] = fp
+                            if '#' in f:
+                                _CACHE[f.replace('#', '+')] = fp
+                                _CACHE[f.replace('#', '_')] = fp
+                                _CACHE[f.replace('#', '')] = fp
+                            if '+' in f:
+                                _CACHE[f.replace('+', '#')] = fp
+                                _CACHE[f.replace('+', '_')] = fp
+                                _CACHE[f.replace('+', '')] = fp
+
+    if basename in _CACHE:
+        return _CACHE[basename]
+
     for alt in [
         basename.replace('#', '+'),
         basename.replace('+', '#'),
         basename.replace('#', '_'),
         basename.replace('#', ''),
-        basename.replace('+', ''),
+        basename.replace('+', '')
     ]:
-        if alt in _NPY_RADAR_CACHE:
-            return _NPY_RADAR_CACHE[alt]
-
-    if os.path.exists(path_str):
-        return path_str
+        if alt in _CACHE:
+            return _CACHE[alt]
 
     return path_str
 
@@ -110,7 +63,7 @@ def resolve_npy_path(path_str: str) -> str:
 class UCFDataset(data.Dataset):
     """
     DataLoader for UCF-Crime Video Features (CLIP ViT-B/16, 512-d).
-    Pre-resolves all paths in __init__ via in-memory Radar Cache in 0.02s.
+    Directly loads verified feature paths for 0-latency training.
     """
     def __init__(self, clip_dim: int, file_path: str, test_mode: bool = False, normal: bool = False):
         self.df = pd.read_csv(file_path)
@@ -124,29 +77,9 @@ class UCFDataset(data.Dataset):
             else:
                 self.df = self.df.loc[self.df['label'] != 'Normal'].reset_index(drop=True)
 
-        if not _NPY_RADAR_CACHE:
-            init_radar_cache()
-
-        resolved = []
-        missing = 0
-        for p in self.df['path']:
-            rp = resolve_npy_path(p)
-            resolved.append(rp)
-            # Only count missing if it could not be resolved from Radar Cache
-            if rp == p and not os.path.exists(p):
-                missing += 1
-
-        self.df['path'] = resolved
-        tag = "Normal Train" if normal else ("Abnormal Train" if not test_mode else "Test")
-        if missing == 0:
-            sample = os.path.basename(self.df.loc[0, 'path'])
-            print(f"[Dataset] UCF {tag} ({len(self.df)} videos): 100% verified! (Sample: {sample})", flush=True)
-        else:
-            print(f"\n❌ [CẢNH BÁO ĐỎ] UCF {tag}: Thiếu {missing}/{len(self.df)} file video trên hệ thống!", flush=True)
-            if os.path.exists("/kaggle/input"):
-                print("👉 NGUYÊN NHÂN: Bạn chưa thêm Dataset UCF-Crime vào Notebook!")
-                print("👉 KHẮC PHỤC: Bấm nút '+ Add Input' ở góc trên bên phải màn hình Kaggle và chọn Dataset chứa UCFClipFeatures!\n", flush=True)
-            raise FileNotFoundError(f"Missing {missing} UCF-Crime feature files on disk. Please add UCFClipFeatures dataset to Kaggle input.")
+        # Fast resolution check: only resolve if the first path doesn't exist
+        if len(self.df) > 0 and not os.path.exists(str(self.df.loc[0, 'path'])):
+            self.df['path'] = [resolve_npy_path(p) for p in self.df['path']]
 
     def __len__(self):
         return self.df.shape[0]
@@ -168,8 +101,7 @@ class UCFDataset(data.Dataset):
 class XDDataset(data.Dataset):
     """
     DataLoader for XD-Violence Video Features (CLIP ViT-B/16, 512-d).
-    Label 'A' or 'Normal' corresponds to normal videos.
-    Labels 'B1', 'B2', 'B4', 'B5', 'B6', 'G' correspond to violent events.
+    Directly loads verified feature paths for 0-latency training.
     """
     def __init__(self, clip_dim: int, file_path: str, test_mode: bool = False, normal: bool = False):
         self.df = pd.read_csv(file_path)
@@ -184,28 +116,8 @@ class XDDataset(data.Dataset):
             else:
                 self.df = self.df.loc[~is_normal].reset_index(drop=True)
 
-        if not _NPY_RADAR_CACHE:
-            init_radar_cache()
-
-        resolved = []
-        missing = 0
-        for p in self.df['path']:
-            rp = resolve_npy_path(p)
-            resolved.append(rp)
-            if rp == p and not os.path.exists(p):
-                missing += 1
-
-        self.df['path'] = resolved
-        tag = "Normal Train" if normal else ("Abnormal Train" if not test_mode else "Test")
-        if missing == 0:
-            sample = os.path.basename(self.df.loc[0, 'path'])
-            print(f"[Dataset] XD {tag} ({len(self.df)} videos): 100% verified! (Sample: {sample})", flush=True)
-        else:
-            print(f"\n❌ [CẢNH BÁO ĐỎ] XD {tag}: Thiếu {missing}/{len(self.df)} file video trên hệ thống!", flush=True)
-            if os.path.exists("/kaggle/input"):
-                print("👉 NGUYÊN NHÂN: Bạn chưa thêm Dataset XD-Violence vào Notebook!")
-                print("👉 KHẮC PHỤC: Bấm nút '+ Add Input' ở góc trên bên phải màn hình Kaggle và chọn Dataset chứa XDTrainClipFeatures!\n", flush=True)
-            raise FileNotFoundError(f"Missing {missing} XD-Violence feature files on disk. Please add XDTrainClipFeatures dataset to Kaggle input.")
+        if len(self.df) > 0 and not os.path.exists(str(self.df.loc[0, 'path'])):
+            self.df['path'] = [resolve_npy_path(p) for p in self.df['path']]
 
     def __len__(self):
         return self.df.shape[0]

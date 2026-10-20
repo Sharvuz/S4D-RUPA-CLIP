@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from rupa_clip_model import S4DRUPACLIP
 from losses import S4DRUPALoss
-from dataset import XDDataset, init_radar_cache
+from dataset import XDDataset
 from options import get_parser
 from text_prompts import load_or_encode_text_features, get_class_index
 from xd_test import evaluate_xd
@@ -127,7 +127,6 @@ def main():
         text_features = load_or_encode_text_features(device=device, dataset='xd').float()
         print(f"[TextPrompts] Active text embedding matrix shape: {text_features.shape}")
 
-    init_radar_cache()
     half_batch = max(1, args.batch_size // 2)
     normal_dataset = XDDataset(args.visual_length, args.train_list, test_mode=False, normal=True)
     abnormal_dataset = XDDataset(args.visual_length, args.train_list, test_mode=False, normal=False)
