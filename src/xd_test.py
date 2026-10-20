@@ -14,7 +14,7 @@ from rupa_clip_model import S4DRUPACLIP
 from dataset import XDDataset
 from tools import get_batch_mask
 from xd_detectionMAP import getDetectionMAP as dmAP
-from options import get_parser
+from options import get_parser, apply_model_scale
 from text_prompts import load_or_encode_text_features
 
 
@@ -91,7 +91,7 @@ def evaluate_xd(model, test_loader, maxlen, gt, gtsegments, gtlabels, device, te
 if __name__ == '__main__':
     parser = get_parser(dataset='xd')
     parser.add_argument('--model-path', default='models/s4d_rupa_clip_xd_best.pth', type=str)
-    args = parser.parse_args()
+    args = apply_model_scale(parser.parse_args())
 
     device = torch.device(args.device if torch.cuda.is_available() and args.device == 'cuda' else 'cpu')
     print(f"Running XD-Violence evaluation on device: {device}")
@@ -111,12 +111,27 @@ if __name__ == '__main__':
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)
 
+    checkpoint_state = None
+    if os.path.exists(args.model_path):
+        checkpoint = torch.load(args.model_path, map_location=device)
+        checkpoint_state = checkpoint.get('model_state_dict', checkpoint)
+        saved_args = checkpoint.get('args', {})
+        if saved_args:
+            args.num_layers = saved_args.get('num_layers', args.num_layers)
+            args.d_state = saved_args.get('d_state', args.d_state)
+            args.ssm_type = saved_args.get('ssm_type', args.ssm_type)
+            args.expand = saved_args.get('expand', args.expand)
+            args.num_prototypes = saved_args.get('num_prototypes', args.num_prototypes)
+            args.gate_hidden = saved_args.get('gate_hidden', args.gate_hidden)
+            print(f"[Auto-Config] Loaded architecture from checkpoint: layers={args.num_layers}, d_state={args.d_state}, expand={args.expand}, prototypes={args.num_prototypes}")
+
     model = S4DRUPACLIP(
         in_dim=args.in_dim,
         d_model=args.d_model,
         num_layers=args.num_layers,
         d_state=args.d_state,
         ssm_type=args.ssm_type,
+        expand=args.expand,
         num_prototypes=args.num_prototypes,
         text_dim=args.text_dim,
         dropout=args.dropout,
@@ -124,10 +139,8 @@ if __name__ == '__main__':
         gate_init_bias=args.gate_init_bias
     ).to(device)
 
-    if os.path.exists(args.model_path):
-        checkpoint = torch.load(args.model_path, map_location=device)
-        state_dict = checkpoint.get('model_state_dict', checkpoint)
-        model.load_state_dict(state_dict)
+    if checkpoint_state is not None:
+        model.load_state_dict(checkpoint_state)
         print(f"Successfully loaded checkpoint: {args.model_path}")
     else:
         print(f"Warning: Checkpoint not found at {args.model_path}. Running with random initialization.")

@@ -169,10 +169,10 @@ class BiS4DBlock(nn.Module):
 
         self.norm2 = nn.LayerNorm(d_model)
         self.ffn = nn.Sequential(
-            nn.Linear(d_model, d_model * 2),
+            nn.Linear(d_model, d_model * expand),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(d_model * 2, d_model),
+            nn.Linear(d_model * expand, d_model),
             nn.Dropout(dropout)
         )
 

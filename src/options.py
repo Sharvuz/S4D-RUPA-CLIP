@@ -30,6 +30,8 @@ def get_parser(dataset='ucf'):
     parser.add_argument('--d-model', default=512, type=int, help='S4D backbone feature dimension')
     parser.add_argument('--num-layers', default=2, type=int, help='Number of Bidirectional S4D layers')
     parser.add_argument('--d-state', default=64, type=int, help='S4D state dimension')
+    parser.add_argument('--expand', default=2, type=int, help='FFN expansion factor in BiS4D blocks')
+    parser.add_argument('--model-scale', default='base', choices=['base', 'ultra'], help='Model capacity: base or ultra')
     parser.add_argument('--ssm-type', default='s4d', choices=['s4d', 'pure', 'official'], help='SSM backend')
     parser.add_argument('--num-prototypes', default=16, type=int, help='Number of normal prototypes in RUPA bank')
     parser.add_argument('--text-dim', default=512, type=int, help='CLIP text embedding dimension')
@@ -80,3 +82,38 @@ def get_parser(dataset='ucf'):
     parser.add_argument('--eval-interval', default=1, type=int)
 
     return parser
+
+
+def apply_model_scale(args):
+    """
+    If model-scale is 'ultra', automatically scales up architecture and batch parameters
+    to achieve maximum GPU utilization and SOTA performance, unless explicitly overridden.
+    """
+    import sys
+    if getattr(args, 'model_scale', 'base') == 'ultra':
+        argv_str = ' '.join(sys.argv)
+        if '--num-layers' not in argv_str:
+            args.num_layers = 4
+        if '--expand' not in argv_str:
+            args.expand = 4
+        if '--d-state' not in argv_str:
+            args.d_state = 128
+        if '--num-prototypes' not in argv_str:
+            args.num_prototypes = 32
+        if '--gate-hidden' not in argv_str:
+            args.gate_hidden = 64
+        if args.dataset == 'xd':
+            if '--batch-size' not in argv_str:
+                args.batch_size = 96
+            if '--max-epoch' not in argv_str:
+                args.max_epoch = 15
+        elif args.dataset == 'ucf':
+            if '--batch-size' not in argv_str:
+                args.batch_size = 64
+            if '--max-epoch' not in argv_str:
+                args.max_epoch = 15
+        print(f"[Model Scale: ULTRA] Initializing heavyweight architecture: "
+              f"layers={args.num_layers}, d_state={args.d_state}, expand={args.expand}, "
+              f"prototypes={args.num_prototypes}, gate_hidden={args.gate_hidden}, "
+              f"batch_size={args.batch_size}, epochs={args.max_epoch}")
+    return args

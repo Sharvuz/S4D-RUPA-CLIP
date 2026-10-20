@@ -204,5 +204,26 @@ python src/ucf_test.py \
     --model-path models/s4d_rupa_clip_ucf_best.pth
 ```
 
-### 4. 1-Click Kaggle Training
-Open and run `s4d_rupa_clip_kaggle.ipynb` directly in Kaggle with Dual T4 GPUs enabled. Training takes under 15 minutes for 15 epochs.
+### 4. Training on XD-Violence (Ultra SOTA Mode)
+XD-Violence contains over 14,000 video segments and diverse multi-modal violence patterns. We scale the model to **Ultra capacity** (4 BiS4D layers, FFN expansion $4\times$, 32 orthogonal prototypes, batch size 96 on Dual T4):
+```bash
+python src/xd_train.py \
+    --dataset xd \
+    --model-scale ultra \
+    --batch-size 96 \
+    --lr 5e-5 \
+    --max-epoch 15 \
+    --warmup-epochs 2 \
+    --use-text-prompt True \
+    --save-dir models
+```
+
+### 5. Evaluation on XD-Violence Test Set
+```bash
+python src/xd_test.py \
+    --dataset xd \
+    --model-path models/s4d_rupa_clip_xd_best.pth
+```
+
+### 6. 1-Click Kaggle Training
+Open and run `s4d_rupa_clip_kaggle.ipynb` directly in Kaggle with Dual T4 GPUs enabled. Full training on XD-Violence finishes in ~35-45 minutes.

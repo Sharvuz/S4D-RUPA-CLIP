@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 from rupa_clip_model import S4DRUPACLIP
 from losses import S4DRUPALoss
 from dataset import UCFDataset
-from options import get_parser
+from options import get_parser, apply_model_scale
 from text_prompts import load_or_encode_text_features, get_class_index
 from ucf_test import evaluate_ucf
 
@@ -112,7 +112,7 @@ def train_epoch(
 
 def main():
     parser = get_parser(dataset='ucf')
-    args = parser.parse_args()
+    args = apply_model_scale(parser.parse_args())
 
     set_seed(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() and args.device == 'cuda' else 'cpu')
@@ -122,6 +122,7 @@ def main():
     print("  S4D-RUPA-CLIP: Training from Scratch on UCF-Crime")
     print("  Decoupled Residual-to-Text Alignment | Standalone (No DSANet)")
     print(f"  Device: {device} (GPUs: {num_gpus}) | Batch Size: {args.batch_size} | Epochs: {args.max_epoch}")
+    print(f"  Architecture: Layers={args.num_layers} | d_state={args.d_state} | expand={args.expand} | Prototypes={args.num_prototypes}")
     print("=" * 65)
 
     os.makedirs(args.save_dir, exist_ok=True)
@@ -176,6 +177,7 @@ def main():
         num_layers=args.num_layers,
         d_state=args.d_state,
         ssm_type=args.ssm_type,
+        expand=args.expand,
         num_prototypes=args.num_prototypes,
         text_dim=args.text_dim,
         dropout=args.dropout,

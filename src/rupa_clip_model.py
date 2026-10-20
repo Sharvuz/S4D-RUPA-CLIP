@@ -185,6 +185,7 @@ class S4DRUPACLIP(nn.Module):
         num_layers: int = 2,
         d_state: int = 64,
         ssm_type: str = 's4d',
+        expand: int = 2,
         num_prototypes: int = 16,
         text_dim: int = 512,
         dropout: float = 0.1,
@@ -195,6 +196,9 @@ class S4DRUPACLIP(nn.Module):
         self.in_dim = in_dim
         self.d_model = d_model
         self.num_layers = num_layers
+        self.d_state = d_state
+        self.ssm_type = ssm_type
+        self.expand = expand
         self.num_prototypes = num_prototypes
         self.text_dim = text_dim
 
@@ -212,7 +216,7 @@ class S4DRUPACLIP(nn.Module):
             num_layers=num_layers,
             d_state=d_state,
             ssm_type=ssm_type,
-            expand=2,
+            expand=expand,
             dropout=dropout
         )
 
