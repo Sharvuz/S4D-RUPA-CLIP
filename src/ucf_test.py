@@ -118,7 +118,10 @@ if __name__ == '__main__':
 
     checkpoint_state = None
     if os.path.exists(args.model_path):
-        checkpoint = torch.load(args.model_path, map_location=device)
+        try:
+            checkpoint = torch.load(args.model_path, map_location=device, weights_only=False)
+        except TypeError:
+            checkpoint = torch.load(args.model_path, map_location=device)
         checkpoint_state = checkpoint.get('model_state_dict', checkpoint)
         saved_args = checkpoint.get('args', {})
         if saved_args:
