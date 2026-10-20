@@ -95,14 +95,15 @@ def train_epoch(
         running_bg += loss_dict['loss_bg'].item()
         running_gate += gate_val
 
-        if step % 10 == 0 or step == total_steps - 1:
+        if step < 5 or step % 10 == 0 or step == total_steps - 1:
             print(
                 f"Epoch [{epoch:02d}/{args.max_epoch:02d}] Step [{step:03d}/{total_steps:03d}] | "
                 f"Loss: {loss.item():.4f} (MIL: {loss_dict['loss_mil'].item():.4f}, "
                 f"Sem: {loss_dict['loss_sem'].item():.4f}, "
                 f"Rec: {loss_dict['loss_rec'].item():.4f}, "
                 f"BG: {loss_dict['loss_bg'].item():.4f}) | "
-                f"Gate: {gate_val:.3f} | TopK Abn/Nor: {abn_topk:.3f}/{nor_topk:.3f}"
+                f"Gate: {gate_val:.3f} | TopK Abn/Nor: {abn_topk:.3f}/{nor_topk:.3f}",
+                flush=True
             )
 
     return running_loss / total_steps
@@ -229,7 +230,7 @@ def main():
                 cosine_scheduler.step()
             current_lr = optimizer.param_groups[0]['lr']
 
-        print(f"\n--- Epoch [{epoch:02d}/{args.max_epoch:02d}] (LR: {current_lr:.6f}) ---")
+        print(f"\n--- Epoch [{epoch:02d}/{args.max_epoch:02d}] (LR: {current_lr:.6f}) ---", flush=True)
         train_loss = train_epoch(
             epoch=epoch,
             model=model,
@@ -243,7 +244,7 @@ def main():
 
         # Evaluation
         if epoch % args.eval_interval == 0:
-            print(f"\n[Validation] Evaluating Epoch {epoch} on UCF-Crime test set...")
+            print(f"\n[Validation] Evaluating Epoch {epoch} on UCF-Crime test set...", flush=True)
             eval_model = model.module if isinstance(model, nn.DataParallel) else model
             auc, ap = evaluate_ucf(
                 model=eval_model,
@@ -277,9 +278,9 @@ def main():
                     'ap': ap,
                     'args': vars(args)
                 }, best_model_path)
-                print(f"⭐ NEW BEST UCF-CRIME MODEL! Epoch {epoch}: ROC-AUC = {best_auc:.2f}% | AP = {best_ap:.2f}%")
+                print(f"⭐ NEW BEST UCF-CRIME MODEL! Epoch {epoch}: ROC-AUC = {best_auc:.2f}% | AP = {best_ap:.2f}%", flush=True)
 
-    print("\n" + "=" * 65)
+    print("\n" + "=" * 65, flush=True)
     print("  TRAINING COMPLETE")
     print(f"  Best Epoch: {best_epoch:02d}")
     print(f"  Best ROC-AUC: {best_auc:.2f}% | Best AP: {best_ap:.2f}%")

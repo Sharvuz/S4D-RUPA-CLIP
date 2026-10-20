@@ -91,14 +91,15 @@ def train_epoch(
         running_bg += loss_dict['loss_bg'].item()
         running_gate += gate_val
 
-        if step % 10 == 0 or step == total_steps - 1:
+        if step < 5 or step % 10 == 0 or step == total_steps - 1:
             print(
                 f"Epoch [{epoch:02d}/{args.max_epoch:02d}] Step [{step:03d}/{total_steps:03d}] | "
                 f"Loss: {loss.item():.4f} (MIL: {loss_dict['loss_mil'].item():.4f}, "
                 f"Sem: {loss_dict['loss_sem'].item():.4f}, "
                 f"Rec: {loss_dict['loss_rec'].item():.4f}, "
                 f"BG: {loss_dict['loss_bg'].item():.4f}) | "
-                f"Gate: {gate_val:.3f} | TopK Abn/Nor: {abn_topk:.3f}/{nor_topk:.3f}"
+                f"Gate: {gate_val:.3f} | TopK Abn/Nor: {abn_topk:.3f}/{nor_topk:.3f}",
+                flush=True
             )
 
     return running_loss / total_steps
