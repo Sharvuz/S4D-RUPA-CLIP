@@ -45,6 +45,7 @@ def train_epoch(
     total_steps = min(len(normal_loader), len(abnormal_loader))
     normal_iter = iter(normal_loader)
     abnormal_iter = iter(abnormal_loader)
+    print(f"  [Epoch {epoch:02d}] Initializing batch iterator ({total_steps} steps total)...", flush=True)
 
     running_loss = 0.0
     running_mil = 0.0
@@ -135,6 +136,7 @@ def main():
         batch_size=half_batch,
         shuffle=True,
         num_workers=args.num_workers,
+        pin_memory=(device.type == 'cuda'),
         drop_last=True
     )
     abnormal_loader = DataLoader(
@@ -142,11 +144,18 @@ def main():
         batch_size=half_batch,
         shuffle=True,
         num_workers=args.num_workers,
+        pin_memory=(device.type == 'cuda'),
         drop_last=True
     )
 
     test_dataset = XDDataset(args.visual_length, args.test_list, test_mode=True)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0)
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=(device.type == 'cuda')
+    )
 
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)

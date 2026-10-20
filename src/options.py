@@ -23,7 +23,7 @@ def get_parser(dataset='ucf'):
     parser.add_argument('--seed', default=234, type=int, help='Random seed for reproducibility')
     parser.add_argument('--dataset', default=dataset, choices=['ucf', 'xd'])
     parser.add_argument('--device', default='cuda', type=str)
-    parser.add_argument('--num-workers', default=2, type=int)
+    parser.add_argument('--num-workers', default=0, type=int)
 
     # Architecture: S4D & RUPA
     parser.add_argument('--in-dim', default=512, type=int, help='Input feature dimension (CLIP ViT-B/16)')
