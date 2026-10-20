@@ -68,21 +68,21 @@ def evaluate_ucf(model, test_loader, maxlen, gt, gtsegments, gtlabels, device, t
     auc = roc_auc_score(gt[:len(frame_scores)], frame_scores) * 100.0
     ap = average_precision_score(gt[:len(frame_scores)], frame_scores) * 100.0
 
-    print(f"\n==================== UCF-CRIME EVALUATION (S4D-RUPA-CLIP) ====================")
-    print(f"Frame ROC-AUC: {auc:.2f}% | Average Precision (AP): {ap:.2f}%")
+    print(f"\n==================== UCF-CRIME EVALUATION (S4D-RUPA-CLIP) ====================", flush=True)
+    print(f"Frame ROC-AUC: {auc:.2f}% | Average Precision (AP): {ap:.2f}%", flush=True)
 
     try:
         dmap, iou = dmAP(element_logits_stack, gtsegments, gtlabels, excludeNormal=False)
         avg_map = 0.0
         for i in range(len(iou)):
-            print(f"mAP@{iou[i]:.1f} = {dmap[i]:.2f}%")
+            print(f"mAP@{iou[i]:.1f} = {dmap[i]:.2f}%", flush=True)
             avg_map += dmap[i]
         avg_map /= len(iou)
-        print(f"Mean Average Precision (mAP): {avg_map:.2f}%")
+        print(f"Mean Average Precision (mAP): {avg_map:.2f}%", flush=True)
     except Exception as e:
-        print(f"Note: Temporal mAP evaluation skipped: {e}")
+        print(f"Note: Temporal mAP evaluation skipped: {e}", flush=True)
 
-    print(f"===============================================================================\n")
+    print(f"===============================================================================\n", flush=True)
     return auc, ap
 
 
