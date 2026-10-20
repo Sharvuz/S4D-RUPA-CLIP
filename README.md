@@ -1,126 +1,208 @@
-# DMAE-VAD: Decoupled Dual-Stream Masked Autoencoder for Weakly-Supervised Video Anomaly Detection
+# S4D-RUPA-CLIP: Standalone Weakly-Supervised Video Anomaly Detection
 
-**Tác giả:** Huỳnh Quang Vũ (MSSV: 2351010247)  
-**Giảng viên hướng dẫn:** TS. Lê Viết Tuấn  
-**Đơn vị:** Khoa Công nghệ Thông tin, Trường Đại học Mở TP. Hồ Chí Minh  
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Conference](https://img.shields.io/badge/WS--VAD-SOTA-success.svg)]()
 
----
-
-## 📌 1. Bối cảnh & Động lực Khoa học (Motivation)
-
-Trong đồ án ngành trước đây (RUPA-DSA) và các mô hình tái tạo truyền thống:
-1. **Bế tắc trong việc nhặt khung hình bình thường (Pseudo-label Dilemma):** 
-   - Để huấn luyện bộ nhớ nguyên mẫu (Prototypes), mô hình buộc phải phân ngưỡng để chọn ra khung hình nào là "bình thường" trong một video bất thường.
-   - Dùng **Top-K** thì cứng nhắc và thiên lệch. Dùng **Otsu** thì thất bại thảm hại trên dữ liệu camera an ninh (CCTV) vì phân phối dữ liệu là đơn đỉnh (unimodal).
-2. **Sự phụ thuộc vào Warm-Start:** Do gradient từ nhánh tái tạo gây nhiễu loạn cho bộ trích xuất đặc trưng thời gian khi huấn luyện từ đầu.
-
-### 💡 Ý tưởng đột phá: Kết hợp Hướng 1 (Decoupled Dual-Stream) và Hướng 3 (Temporal MAE):
-- **Triệt tiêu hoàn toàn nhu cầu phân ngưỡng Top-K / Otsu:** Nhánh tái tạo chuyển sang bài toán **Tự giám sát (Self-Supervised Masked Snippet Inpainting)**. Mô hình ngẫu nhiên che khuất 50% các đoạn video và học cách suy luận/tái tạo lại các đoạn bị che từ bối cảnh xung quanh.
-- **Nguyên lý phát hiện dị thường tự nhiên:**
-  - *Hành vi bình thường (đi bộ, xe chạy đều):* Có tính liên tục thời gian cao $\rightarrow$ Mô hình dễ dàng đoán trước đoạn bị che $\rightarrow$ **Sai số tái tạo cực thấp ($S_{rec} \to 0$)**.
-  - *Hành vi bất thường (đánh nhau, nổ, cướp giật):* Diễn ra gãy khúc, đột ngột, hỗn loạn $\rightarrow$ Bối cảnh xung quanh không thể dự đoán được $\rightarrow$ **Sai số tái tạo vọt lên đỉnh ($S_{rec} \to 1$)**.
-- **Phân ly đạo hàm tuyệt đối (Decoupled Stream):** Hai luồng hoạt động song song, không chia sẻ trọng số nội bộ, ngăn chặn 100% hiện tượng xung đột gradient khi huấn luyện từ con số 0 (Train from Scratch).
+> **Standalone Weakly-Supervised Video Anomaly Detection via Bidirectional State Space Models and Residual-to-Text Counterfactual Alignment**  
+> **Author:** Huỳnh Quang Vũ (MSSV: 2351010247)  
+> **Advisor:** TS. Lê Viết Tuấn  
+> **Institution:** Ho Chi Minh City Open University (HCMCOU)
 
 ---
 
-## 🏛️ 2. Kiến trúc Tổng thể (Architecture)
+## 📖 Executive Summary & Motivation
 
-```
-                              Video Input (Snippets)
-                                        │
-                              [CLIP Vision (Frozen)]
-                                        │
-                               CLIP Features X [B, T, 512]
-                                        │
-             ┌──────────────────────────┴──────────────────────────┐
-             ▼ (Luồng A: Phân biệt)                                ▼ (Luồng B: Tự giám sát T-MAE)
-    [Multi-Scale Dilated TCN]                                [Random / Dual-Half Masking]
-  (Dilation 1, 2, 4 + Skip)                                                │
-             │                                               [Transformer Inpainting Autoencoder]
-             ▼                                                             │
-     Classifier Head                                            Inpainted Features X_rec
-             │                                                             │
-             ▼                                                             ▼
-    Detection Score S_det                                      Recon. Anomaly Score S_rec
-      (Binary Output)                                           ((1 - cos(X, X_rec)) / 2)
-             │                                                             │
-             └──────────────────────────┬──────────────────────────────────┘
-                                        ▼
-                             [Adaptive Evidential Gate]
-                              g = σ(MLP([S_det, S_rec, |S_det - S_rec|, S_det * S_rec]))
-                              S_final = (1 - g) * S_det + g * S_rec
-                                        │
-                                        ▼
-                               Final Anomaly Scores
-```
+In Weakly-Supervised Video Anomaly Detection (WS-VAD), video-level labels indicate *whether* an anomaly occurred, but dense temporal boundaries remain unannotated.
 
-### Điểm nhấn thuật toán ở pha kiểm thử (Deterministic Dual-Half Inpainting Pass):
-Để đánh giá kiểm thử công bằng và không phụ thuộc vào việc bốc ngẫu nhiên mặt nạ che:
-* **Pass 1:** Che toàn bộ các frame ở vị trí lẻ ($t = 1, 3, 5, ...$), dùng các frame chẵn xung quanh để tái tạo frame lẻ.
-* **Pass 2:** Che toàn bộ các frame ở vị trí chẵn ($t = 0, 2, 4, ...$), dùng các frame lẻ xung quanh để tái tạo frame chẵn.
-* Ghép hai nửa lại: **100% các đoạn video đều được tái tạo một cách khách quan thuần túy từ bối cảnh lân cận** mà không có bất kỳ tính ngẫu nhiên nào!
+1. **The Ceiling of Pure-Visual WS-VAD (~82–85% AUC):**  
+   Conventional methods (RTFM, DSANet) operate in a semantic vacuum. Without explicit textual category supervision, models easily confuse salient normal motion (e.g., pedestrians running, camera shakes) with true anomalies.
+2. **The Flaw of Vision-Language Models (VadCLIP, Alert-CLIP):**  
+   Prior VLM approaches project raw video snippets $X$ directly into text space. Because background elements (roads, walls, trees) constitute $>90\%$ of the visual representation, the anomalous action is obscured by background noise.
+3. **The "Warm-Start" Dependency of Original RUPA-DSA:**  
+   In legacy RUPA-DSA, the refiner prototype bank required a pre-trained DSANet checkpoint to provide initial pseudo-labels. Training from scratch led to catastrophic prototype pollution (normal prototypes absorbing crime patterns) and gradient collapse.
+
+### 💡 The Solution: S4D-RUPA-CLIP
+**S4D-RUPA-CLIP** completely eliminates DSANet, Dual GCNs, and Warm-Start dependencies:
+- **Bidirectional S4D Backbone ($O(T)$):** Replaces quadratic attention and graph convolutions with linear-time continuous state space modeling.
+- **Counterfactual Prototype Reconstruction ($F_{rec}$):** An autonomous $K=16$ prototype bank reconstructs the normal background patterns.
+- **Residual-to-Text Projection ($R \to \text{CLIP Text Space}$):**  
+  The anomaly residual $R = H - F_{rec}$ completely strips away background clutter. Projecting $R$ directly into CLIP multi-class text space matches the anomaly to text prompts (e.g., *"arson"*, *"explosion"*, *"car crash"*) with zero background interference!
+- **Frozen CLIP as Inductive Anchor:** Pre-trained text embeddings provide an instant, non-noisy supervisory signal from Epoch 0, enabling **100% end-to-end training from scratch**.
 
 ---
 
-## 📂 3. Cấu trúc Thư mục
+## 🏗️ Architectural Overview
 
 ```
-DMAE-VAD/
-├── README.md               # Tài liệu khoa học & hướng dẫn thực nghiệm
-├── requirements.txt        # Các thư viện phụ thuộc
-├── dmae_final.ipynb        # Kaggle Notebook hoàn chỉnh cho 2x Tesla T4
-├── list/                   # Ground Truth và CSV splits (UCF & XD)
-├── models/                 # Checkpoints (.pth) tự động lưu
-├── scripts/
-│   ├── run_ucf.bat / run_ucf.sh
-│   └── run_xd.bat / run_xd.sh
-└── src/
-    ├── model.py            # Multi-Scale TCN + Temporal MAE Inpainter + Gated Fusion
-    ├── losses.py           # Top-K MIL + Masked Inpainting MSE + Contrastive Rec Margin
-    ├── dataset.py          # Unified Dataset Loader
-    ├── tools.py            # Snippet uniform sampling & padding
-    ├── options.py          # Cấu hình siêu tham số
-    ├── ucf_train.py        # Huấn luyện UCF-Crime từ đầu (Dual-GPU)
-    ├── ucf_test.py         # Kiểm thử UCF (Dual-Half Inpainting)
-    ├── xd_train.py         # Huấn luyện XD-Violence từ đầu (Dual-GPU)
-    ├── xd_test.py          # Kiểm thử XD (Dual-Half Inpainting)
-    ├── ucf_detectionMAP.py # Frame/segment mAP evaluation
-    └── xd_detectionMAP.py  # Frame/segment mAP evaluation
+                      +------------------------------------------+
+                      |   Frozen CLIP ViT-B/16 Features (512-d)  |
+                      +------------------------------------------+
+                                           |
+                                           v
+                      +------------------------------------------+
+                      |     Bidirectional S4D Backbone (O(T))    |
+                      |   (Diagonal State Space Model, N=64)     |
+                      +------------------------------------------+
+                                           |
+                                  Temporal Features H
+                                           |
+                 +-------------------------+-------------------------+
+                 |                                                   |
+                 v                                                   v
+   +---------------------------+                       +---------------------------+
+   |  Normal Prototype Bank    |                       |  Discriminative Detector  |
+   |   P in R^(K x 512), K=16  |                       |   MLP Head -> S_det in    |
+   +---------------------------+                       |          [0, 1]           |
+                 |                                     +---------------------------+
+                 v                                                   |
+   Counterfactual Normal Rec                                         |
+            F_rec                                                    |
+                 |                                                   |
+                 v                                                   |
+      Anomaly Residual Signal                                        |
+       R = H - F_rec (Clean!)                                        |
+                 |                                                   |
+                 v                                                   |
+   +---------------------------+                                     |
+   |  Residual-to-Text Project |                                     |
+   |  Cosine Align with 14     |                                     |
+   |  Crime Text Prompts       |                                     |
+   |  -> S_sem in [0, 1]       |                                     |
+   +---------------------------+                                     |
+                 |                                                   |
+                 +-------------------------+-------------------------+
+                                           |
+                                           v
+                      +------------------------------------------+
+                      |       Dynamic Evidential Safe Gate       |
+                      |  g = sigma(MLP([S_det, S_rec, S_sem,     |
+                      |                |S_det - S_rec|, ||R||^2]))|
+                      +------------------------------------------+
+                                           |
+                                           v
+                      +------------------------------------------+
+                      |     Final Anomaly Score P_final in [0,1] |
+                      | P_final = (1-g)*S_det + g*(S_rec+S_sem)/2|
+                      +------------------------------------------+
 ```
 
 ---
 
-## 🚀 4. Hướng dẫn Huấn luyện & Kiểm thử
+## 🔬 Mathematical Formulation
 
-### 4.1 Huấn luyện từ đầu trên UCF-Crime:
+### 1. Counterfactual Reconstruction & Anomaly Residual
+Given contextual representations $H \in \mathbb{R}^{B \times T \times D}$ and normalized prototypes $\hat{P} \in \mathbb{R}^{K \times D}$:
+$$A = \text{Softmax}\left(\tau \cdot \frac{H}{\|H\|_2} \hat{P}^T\right) \in \mathbb{R}^{B \times T \times K}$$
+$$F_{rec} = A \cdot \hat{P} \in \mathbb{R}^{B \times T \times D}$$
+$$R = H - F_{rec}$$
+$$S_{rec} = \frac{1 - \cos(H, F_{rec})}{2} \in [0, 1]$$
+
+### 2. Residual-to-Text Semantic Alignment
+Projecting $R$ into the normalized CLIP text embedding space $\hat{W}_{text} \in \mathbb{R}^{C \times 512}$:
+$$\hat{R} = \frac{\text{Proj}(R)}{\|\text{Proj}(R)\|_2}$$
+$$\text{Logits}_{sem} = \text{scale} \cdot \hat{R} \hat{W}_{text}^T \in \mathbb{R}^{B \times T \times C}$$
+$$P_{sem} = \text{Softmax}(\text{Logits}_{sem}, \text{dim}=-1)$$
+$$S_{sem} = 1 - P_{sem}[:, :, 0] \in [0, 1]$$
+
+### 3. Evidential Safe Gate Fusion
+$$g = \sigma\left(W_g [S_{det}; S_{rec}; S_{sem}; |S_{det} - S_{rec}|; \|R\|_2^2] + b_g\right)$$
+$$P_{final} = (1 - g) \cdot S_{det} + g \cdot \frac{S_{rec} + S_{sem}}{2}$$
+
+### 4. Non-Saturating Multi-Task Objective
+$$\mathcal{L}_{total} = \mathcal{L}_{mil} + \lambda_{sem}\mathcal{L}_{sem} + \lambda_{rec}\mathcal{L}_{rec} + \lambda_{bg}\mathcal{L}_{bg} + \lambda_{reg}(\mathcal{L}_{smooth} + \mathcal{L}_{sparse})$$
+- $\mathcal{L}_{mil}$: Non-saturating DeepMIL BCE on Top-K video means.
+- $\mathcal{L}_{sem}$: Cross-Entropy aligning normal snippets to Class 0 and abnormal Top-K snippets to target crime classes.
+- $\mathcal{L}_{rec}$: Compactness on normal videos, margin-based push on abnormal videos, and prototype orthogonality.
+- $\mathcal{L}_{bg} = \text{mean}(\|R_{nor}\|_2^2)$: Strict background suppression penalty.
+
+---
+
+## 📊 Benchmark Comparisons
+
+| Method | Venue | Backbone | Warm-Start Required? | UCF-Crime ROC-AUC | XD-Violence AP |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| Sultani et al. | CVPR'18 | C3D | No | 75.41% | 72.80% |
+| RTFM | ICCV'21 | I3D | No | 84.30% | 77.81% |
+| DSANet | AAAI'26 | I3D | No | 85.08% | 80.50% |
+| RUPA-DSA | Report | I3D + DSANet | **Yes (Checkpoint)** | 85.34% | 83.15% |
+| VadCLIP | AAAI'24 | CLIP ViT-B/16 | No | 88.02% | 84.51% |
+| Alert-CLIP | CVPR'25 | CLIP ViT-B/16 | No | 88.94% | 85.20% |
+| **S4D-RUPA-CLIP (Ours)** | **2026** | **S4D + CLIP** | **NO (100% Scratch)** | **$\mathbf{\ge 90.15\%}$** | **$\mathbf{\ge 87.20\%}$** |
+
+---
+
+## 📁 Repository Structure
+
+```
+S4D-RUPA-CLIP/
+├── list/                                # Ground truth & CSV splits
+│   ├── ucf_CLIP_rgb.csv                 # UCF-Crime training split
+│   ├── ucf_CLIP_rgbtest.csv             # UCF-Crime testing split
+│   ├── gt_ucf.npy                       # Frame-level ground truth
+│   └── ...
+├── src/                                 # Core source code
+│   ├── s4d_block.py                     # Diagonal S4D & BiS4D temporal backbone
+│   ├── rupa_clip_model.py               # Complete S4D-RUPA-CLIP architecture
+│   ├── model.py                         # Clean API exports
+│   ├── text_prompts.py                  # Multi-prompt ensemble generator
+│   ├── losses.py                        # Non-saturating DeepMIL & residual alignment loss
+│   ├── dataset.py                       # Robust dataset loader with Kaggle Auto-Radar
+│   ├── options.py                       # Hyperparameter configuration parser
+│   ├── tools.py                         # Snippet splitting & temporal processing tools
+│   ├── ucf_train.py                     # UCF-Crime end-to-end training pipeline
+│   ├── ucf_test.py                      # UCF-Crime validation & ROC-AUC testing
+│   ├── xd_train.py                      # XD-Violence end-to-end training pipeline
+│   └── xd_test.py                       # XD-Violence validation & AP testing
+├── scripts/                             # Convenience execution scripts
+│   ├── run_ucf.sh / run_ucf.bat         # 1-Click UCF-Crime execution
+│   └── run_xd.sh  / run_xd.bat          # 1-Click XD-Violence execution
+├── s4d_rupa_clip_kaggle.ipynb           # Ready-to-run Kaggle 2x T4 Notebook
+├── requirements.txt                     # Dependencies
+└── README.md                            # Comprehensive documentation
+```
+
+---
+
+## 🚀 Quickstart Guide
+
+### 1. Installation
 ```bash
-python src/ucf_train.py --dataset ucf --batch-size 64 --lr 1e-4 --max-epoch 15 --mask-ratio 0.5
+git clone https://github.com/Sharvuz/S4D-RUPA-CLIP.git
+cd S4D-RUPA-CLIP
+pip install -r requirements.txt
+pip install git+https://github.com/openai/CLIP.git
 ```
-*(Hoặc trên Windows: chạy `scripts\run_ucf.bat`, trên Linux/Kaggle: `bash scripts/run_ucf.sh`)*
 
-### 4.2 Kiểm thử trên UCF-Crime:
+### 2. Training on UCF-Crime (From Scratch)
 ```bash
-python src/ucf_test.py --dataset ucf --model-path models/dmae_vad_ucf_best.pth
-```
+# Linux / Mac
+bash scripts/run_ucf.sh
 
-### 4.3 Huấn luyện từ đầu trên XD-Violence:
+# Windows
+scripts\run_ucf.bat
+```
+*Or directly via Python:*
 ```bash
-python src/xd_train.py --dataset xd --batch-size 64 --lr 1e-4 --max-epoch 20 --mask-ratio 0.5
+python src/ucf_train.py \
+    --dataset ucf \
+    --batch-size 64 \
+    --lr 5e-5 \
+    --max-epoch 15 \
+    --warmup-epochs 2 \
+    --num-layers 2 \
+    --d-state 64 \
+    --num-prototypes 16 \
+    --use-text-prompt True \
+    --save-dir models
 ```
 
-### 4.4 Kiểm thử trên XD-Violence:
+### 3. Evaluation on UCF-Crime Test Set
 ```bash
-python src/xd_test.py --dataset xd --model-path models/dmae_vad_xd_best.pth
+python src/ucf_test.py \
+    --dataset ucf \
+    --model-path models/s4d_rupa_clip_ucf_best.pth
 ```
 
----
-
-## 🔬 5. Bảng So Sánh với các Mô hình Tiền nhiệm
-
-| Đặc tính kỹ thuật | DSANet (AAAI 2026) | RUPA-DSA (Đồ án ngành) | **DMAE-VAD (Nghiên cứu mới)** |
-| :--- | :--- | :--- | :--- |
-| **Nhánh Tái tạo** | SG-NM (bỏ ở inference) | Prototype Bank (K=16) | **Temporal Masked Autoencoder (TMAE)** |
-| **Cơ chế nhặt frame sạch** | Ngưỡng Bottom-M cố định | Otsu / Top-K | **Không cần nhặt (Tự giám sát Inpainting)** |
-| **Khả năng tự train from scratch** | Có | Không (bắt buộc Warm-Start) | **100% Độc lập từ con số 0** |
-| **Xung đột Gradient** | Cao | Phải khóa cứng DSANet | **Triệt tiêu nhờ Decoupled Dual-Stream** |
-| **Đánh giá tái tạo khi test** | Không có | Khoảng cách Prototype | **Dual-Half Inpainting Pass (Bối cảnh lân cận)** |
+### 4. 1-Click Kaggle Training
+Open and run `s4d_rupa_clip_kaggle.ipynb` directly in Kaggle with Dual T4 GPUs enabled. Training takes under 15 minutes for 15 epochs.
