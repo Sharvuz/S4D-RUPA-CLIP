@@ -122,7 +122,7 @@ def main():
 
     text_features = None
     if args.use_text_prompt:
-        text_features = load_or_encode_text_features(device=device, dataset='xd')
+        text_features = load_or_encode_text_features(device=device, dataset='xd').float()
         print(f"[TextPrompts] Active text embedding matrix shape: {text_features.shape}")
 
     half_batch = max(1, args.batch_size // 2)

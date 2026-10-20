@@ -214,7 +214,7 @@ def load_or_encode_text_features(device, dataset='ucf', clip_model_name="ViT-B/1
     """
     cache_path = f"list/{dataset}_clip_text_features.pt"
     if os.path.exists(cache_path):
-        features = torch.load(cache_path, map_location=device)
+        features = torch.load(cache_path, map_location=device).float()
         return features
 
     classes = UCF_CLASSES if dataset == 'ucf' else XD_CLASSES
@@ -223,7 +223,7 @@ def load_or_encode_text_features(device, dataset='ucf', clip_model_name="ViT-B/1
     if not HAS_CLIP:
         print("[Warning] openai-clip not installed. Generating normalized orthogonal text embeddings.")
         C = len(classes)
-        features = torch.randn(C, 512, device=device)
+        features = torch.randn(C, 512, device=device).float()
         features = F.normalize(features, p=2, dim=-1)
         return features
 
@@ -236,16 +236,16 @@ def load_or_encode_text_features(device, dataset='ucf', clip_model_name="ViT-B/1
         for cls_name in classes:
             prompts = multi_prompts[cls_name]
             tokens = clip.tokenize(prompts).to(device)
-            # (num_prompts, 512)
-            prompt_feats = clip_model.encode_text(tokens)
+            # (num_prompts, 512) - cast to float32 immediately to avoid c10::Half mismatch
+            prompt_feats = clip_model.encode_text(tokens).float()
             prompt_feats = F.normalize(prompt_feats, p=2, dim=-1)
             # Ensemble centroid: average across prompt variations
             ensemble_feat = torch.mean(prompt_feats, dim=0, keepdim=True)
             ensemble_feat = F.normalize(ensemble_feat, p=2, dim=-1)
             class_embeddings.append(ensemble_feat)
 
-    # (C, 512)
-    text_features = torch.cat(class_embeddings, dim=0)
+    # (C, 512) strictly float32
+    text_features = torch.cat(class_embeddings, dim=0).float()
 
     # Free CLIP model from VRAM immediately
     del clip_model
@@ -253,6 +253,6 @@ def load_or_encode_text_features(device, dataset='ucf', clip_model_name="ViT-B/1
         torch.cuda.empty_cache()
 
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-    torch.save(text_features.cpu(), cache_path)
+    torch.save(text_features.cpu().float(), cache_path)
     print(f"[TextPrompts] Saved cached ensemble text features to {cache_path}")
-    return text_features.to(device)
+    return text_features.to(device).float()

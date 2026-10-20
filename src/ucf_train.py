@@ -127,7 +127,7 @@ def main():
     # 1. Load or Pre-encode Multi-Prompt Ensemble Text Embeddings
     text_features = None
     if args.use_text_prompt:
-        text_features = load_or_encode_text_features(device=device, dataset='ucf')
+        text_features = load_or_encode_text_features(device=device, dataset='ucf').float()
         print(f"[TextPrompts] Active text embedding matrix shape: {text_features.shape}")
 
     # 2. Build Datasets & DataLoaders

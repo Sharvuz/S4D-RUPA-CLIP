@@ -97,7 +97,7 @@ if __name__ == '__main__':
     text_features = None
     if args.use_text_prompt:
         try:
-            text_features = load_or_encode_text_features(device=device, dataset='xd')
+            text_features = load_or_encode_text_features(device=device, dataset='xd').float()
         except Exception as e:
             print(f"[Warning] Could not load text features: {e}. Running in visual-only mode.")
 

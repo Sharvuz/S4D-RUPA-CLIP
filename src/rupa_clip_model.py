@@ -111,7 +111,7 @@ class ResidualSemanticProjector(nn.Module):
         """
         R_proj = self.proj(R)
         R_norm = F.normalize(R_proj, p=2, dim=-1)
-        W_norm = F.normalize(text_features, p=2, dim=-1)
+        W_norm = F.normalize(text_features.to(dtype=R_norm.dtype, device=R_norm.device), p=2, dim=-1)
 
         scale = self.logit_scale.exp().clamp(max=100.0)
         # Scaled cosine similarity between residual and all text prompts
@@ -250,9 +250,13 @@ class S4DRUPACLIP(nn.Module):
         self.register_buffer('text_features', None, persistent=False)
 
     def set_text_features(self, text_features):
-        """Sets precomputed CLIP text embeddings as a model buffer."""
+        """Sets precomputed CLIP text embeddings as a model buffer (float32)."""
         if text_features is not None:
-            self.text_features = F.normalize(text_features, p=2, dim=-1)
+            self.register_buffer(
+                'text_features',
+                F.normalize(text_features.float(), p=2, dim=-1),
+                persistent=False
+            )
 
     def forward(self, x, padding_mask=None, text_features=None):
         """
